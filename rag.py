@@ -1,15 +1,14 @@
 from langchain_community.document_loaders import PyPDFLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_ollama import OllamaLLM
-from langchain.chains import RetrievalQA
 
 # Load PDF
 loader = PyPDFLoader("sample.pdf")
 documents = loader.load()
 
-# Split text into chunks
+# Split documents into chunks
 text_splitter = RecursiveCharacterTextSplitter(
     chunk_size=500,
     chunk_overlap=50
@@ -17,28 +16,22 @@ text_splitter = RecursiveCharacterTextSplitter(
 
 docs = text_splitter.split_documents(documents)
 
-# Embedding model
+# Create embeddings
 embeddings = HuggingFaceEmbeddings(
     model_name="sentence-transformers/all-MiniLM-L6-v2"
 )
 
-# Create vector DB
+# Create vector database
 vectorstore = Chroma.from_documents(
     documents=docs,
     embedding=embeddings
 )
 
-# Retriever
+# Create retriever
 retriever = vectorstore.as_retriever()
 
-# Ollama LLM
+# Load Ollama model
 llm = OllamaLLM(model="llama3")
-
-# RAG chain
-qa_chain = RetrievalQA.from_chain_type(
-    llm=llm,
-    retriever=retriever
-)
 
 print("\nRAG Chatbot Ready!")
 print("Type 'exit' to quit.\n")
@@ -49,6 +42,24 @@ while True:
     if query.lower() == "exit":
         break
 
-    response = qa_chain.invoke(query)
+    # Retrieve relevant chunks
+    retrieved_docs = retriever.invoke(query)
 
-    print("\nBot:", response["result"], "\n")
+    # Combine retrieved text
+    context = "\n".join([doc.page_content for doc in retrieved_docs])
+
+    # Prompt
+    prompt = f"""
+    Answer the question using the context below.
+
+    Context:
+    {context}
+
+    Question:
+    {query}
+    """
+
+    # Generate response
+    response = llm.invoke(prompt)
+
+    print("\nBot:", response, "\n")
